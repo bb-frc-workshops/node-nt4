@@ -22,23 +22,23 @@ export type TextMessage =
   | Unsubscribe;
 
 export interface PublishRequest {
-  type: MessageType.PublishRequest;
-  data: {
+  method: MessageType.PublishRequest;
+  params: {
     name: string;
     type: ValueId;
   };
 }
 
 export interface PublishRelease {
-  type: MessageType.PublishRelease;
-  data: {
+  method: MessageType.PublishRelease;
+  params: {
     name: string;
   };
 }
 
 export interface SetFlags {
-  type: MessageType.SetFlags;
-  data: {
+  method: MessageType.SetFlags;
+  params: {
     name: string;
     add: string[];
     remove: string[];
@@ -46,8 +46,8 @@ export interface SetFlags {
 }
 
 export interface SetFlags {
-  type: MessageType.SetFlags;
-  data: {
+  method: MessageType.SetFlags;
+  params: {
     name: string;
     add: string[];
     remove: string[];
@@ -55,8 +55,8 @@ export interface SetFlags {
 }
 
 export interface Announce {
-  type: MessageType.Announce;
-  data: {
+  method: MessageType.Announce;
+  params: {
     name: string;
     id: number;
     type: ValueId;
@@ -65,23 +65,23 @@ export interface Announce {
 }
 
 export interface Unannounce {
-  type: MessageType.Unannounce;
-  data: {
+  method: MessageType.Unannounce;
+  params: {
     name: string;
     id: number;
   };
 }
 
 export interface GetValues {
-  type: MessageType.GetValues;
-  data: {
+  method: MessageType.GetValues;
+  params: {
     ids: number[];
   };
 }
 
 export interface Subscribe {
-  type: MessageType.Subscribe;
-  data: {
+  method: MessageType.Subscribe;
+  params: {
     prefixes: string[];
     subuid: number;
     options: {
@@ -93,8 +93,8 @@ export interface Subscribe {
 }
 
 export interface Unsubscribe {
-  type: MessageType.Unsubscribe;
-  data: {
+  method: MessageType.Unsubscribe;
+  params: {
     subuid: number;
   };
 }

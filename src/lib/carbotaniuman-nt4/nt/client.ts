@@ -59,7 +59,8 @@ export class NetworkTableClient {
   private toSend: Map<string, EntryData>;
 
   private ws: WebSocket;
-  private counter = 0;
+  private subscription_counter = 0;
+  private publish_counter = 1000;
 
   private timestampOffset = 0;
 
@@ -210,32 +211,32 @@ export class NetworkTableClient {
   }
 
   private processTextMessage(msg: TextMessage) {
-    switch (msg.type) {
+    switch (msg.method) {
       case MessageType.Announce: {
-        const entryData = this.getOrMakeEntry(msg.data.name);
-        entryData.flags = msg.data.flags;
+        const entryData = this.getOrMakeEntry(msg.params.name);
+        entryData.flags = msg.params.flags;
 
         // we assume the id cannot change
         if (entryData.id === undefined) {
-          entryData.id = msg.data.id;
+          entryData.id = msg.params.id;
 
-          this.paths.set(msg.data.name, entryData);
-          this.topics.set(msg.data.id, entryData);
+          this.paths.set(msg.params.name, entryData);
+          this.topics.set(msg.params.id, entryData);
 
-          const toSend = this.toSend.get(msg.data.name);
+          const toSend = this.toSend.get(msg.params.name);
           if(toSend) {
             this.sendValue(toSend as FilledEntryData);
-            this.toSend.delete(msg.data.name);
+            this.toSend.delete(msg.params.name);
           }
         }
         break;
       }
       case MessageType.Unannounce: {
-        const entryData = this.paths.get(msg.data.name);
+        const entryData = this.paths.get(msg.params.name);
 
         if (entryData !== undefined) {
-          this.paths.delete(msg.data.name);
-          this.topics.delete(msg.data.id);
+          this.paths.delete(msg.params.name);
+          this.topics.delete(msg.params.id);
 
           entryData.id = undefined;
         }
@@ -283,7 +284,7 @@ export class NetworkTableClient {
 
   setValue(path: string, value: SettableValue, isDefault = false): boolean {
     const entryData = this.getOrMakeEntry(path);
-
+    // console.log( "entryData: " + JSON.stringify(entryData));
     if (entryData.data) {
       if (entryData.data.value.type !== value.type) {
         return false;
@@ -306,7 +307,6 @@ export class NetworkTableClient {
         value,
         timestamp: this.timestamp()
       };
-
       this.sendValue(entryData as FilledEntryData);
     }
     return true;
@@ -316,7 +316,6 @@ export class NetworkTableClient {
     if (!this.publishing(entry.path)) {
       this.publish(entry.path, entry.data.value.type);
     }
-
     if(entry.id) {
       this.ws.send(encode([entry.id, this.timestamp(), binaryId(entry.data.value.type), entry.data.value.value]))
     } else {
@@ -367,7 +366,7 @@ export class NetworkTableClient {
     if (entryData.subuid) {
       return true;
     }
-    entryData.subuid = this.counter++;
+    entryData.subuid = this.subscription_counter++;
 
     if (!this.connected) {
       return false;
@@ -375,8 +374,8 @@ export class NetworkTableClient {
 
     this.sendMessage(
       {
-        type: MessageType.Subscribe,
-        data: {
+        method: MessageType.Subscribe,
+        params: {
           prefixes: [path],
           subuid: entryData.subuid
         }
@@ -398,8 +397,8 @@ export class NetworkTableClient {
 
     this.sendMessage(
       {
-        type: MessageType.Unsubscribe,
-        data: {
+        method: MessageType.Unsubscribe,
+        params: {
           subuid: entryData.subuid
         }
       } as Unsubscribe
@@ -415,6 +414,9 @@ export class NetworkTableClient {
 
   publish(path: string, type: ValueId): boolean {
     const entryData = this.getOrMakeEntry(path);
+
+    entryData.id = this.publish_counter;
+
     if (entryData.publishing) {
       return true;
     }
@@ -429,9 +431,10 @@ export class NetworkTableClient {
 
     this.sendMessage(
       {
-        type: MessageType.PublishRequest,
-        data: {
+        method: MessageType.PublishRequest,
+        params: {
           name: path,
+          pubuid: entryData.id,
           type: type
         }
       } as PublishRequest
@@ -450,11 +453,16 @@ export class NetworkTableClient {
       return true;
     }
 
+    if (!entryData.id) {
+      return true;
+    }
+
     this.sendMessage(
       {
-        type: MessageType.PublishRelease,
-        data: {
-          name: path
+        method: MessageType.PublishRelease,
+        params: {
+          name: path,
+          pubuid: entryData.id
         }
       } as PublishRelease
     );
