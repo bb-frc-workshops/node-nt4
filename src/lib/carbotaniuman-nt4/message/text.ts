@@ -82,12 +82,13 @@ export interface GetValues {
 export interface Subscribe {
   method: MessageType.Subscribe;
   params: {
-    prefixes: string[];
+    topics: string[];
     subuid: number;
-    options: {
-      immediate: boolean;
-      periodic: number;
-      logging: boolean;
+    options?: {
+      periodic?: number; // Default is every 100 ms
+      all?: boolean;
+      topicsonly?: boolean;
+      prefix?: boolean; // Set true to accept partial matches
     };
   };
 }

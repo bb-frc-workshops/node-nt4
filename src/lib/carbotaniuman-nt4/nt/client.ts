@@ -44,7 +44,7 @@ interface EntryData {
   data?: TimestamepdValue
   flags?: string[];
 
-  subuid?: number;
+  guid?: number;
   publishing?: true;
   published?: 'weak' | 'strong';
 }
@@ -96,7 +96,7 @@ export class NetworkTableClient {
         }
 
         value.publishing = undefined;
-        value.subuid = undefined;
+        value.guid = undefined;
         value.id = undefined;
       });
     };
@@ -117,7 +117,17 @@ export class NetworkTableClient {
     // TODO ZQ: Change this pls
     this.ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {
-        const [id, timestamp, dataType, dataValue] = decode(data) as BinaryMessage;
+        // Need TRY-CATCH for now to avoid this on first set of messages
+        //   throw this.createExtraByteError(this.pos);
+        //   RangeError: Extra 13 of 40 byte(s) found at buffer[27]
+        let id: number, dataType: ValueBinaryId, timestamp: number, dataValue;
+        try {
+          [id, timestamp, dataType, dataValue] = decode(data) as BinaryMessage;
+        } catch(e) {
+          console.log('Message Exception');
+          return;
+        }
+
         if (id == -1) {
           const oldOffset = this.timestampOffset;
           this.timestampOffset = (timestamp - (dataValue as number)) / 2;
@@ -211,6 +221,7 @@ export class NetworkTableClient {
   }
 
   private processTextMessage(msg: TextMessage) {
+    //console.log(" TextMessage " + JSON.stringify(msg));
     switch (msg.method) {
       case MessageType.Announce: {
         const entryData = this.getOrMakeEntry(msg.params.name);
@@ -284,7 +295,6 @@ export class NetworkTableClient {
 
   setValue(path: string, value: SettableValue, isDefault = false): boolean {
     const entryData = this.getOrMakeEntry(path);
-    // console.log( "entryData: " + JSON.stringify(entryData));
     if (entryData.data) {
       if (entryData.data.value.type !== value.type) {
         return false;
@@ -316,8 +326,8 @@ export class NetworkTableClient {
     if (!this.publishing(entry.path)) {
       this.publish(entry.path, entry.data.value.type);
     }
-    if(entry.id) {
-      this.ws.send(encode([entry.id, this.timestamp(), binaryId(entry.data.value.type), entry.data.value.value]))
+    if(entry.guid) {
+      this.ws.send(encode([entry.guid, this.timestamp(), binaryId(entry.data.value.type), entry.data.value.value]))
     } else {
       this.toSend.set(entry.path, entry);
     }
@@ -325,7 +335,6 @@ export class NetworkTableClient {
 
   getValue(path: string, defaultValue: SettableValue): SettableValue {
     const entryData = this.getOrMakeEntry(path);
-
     if (!this.subscribed(path)) {
       this.subscribe(path);
     }
@@ -363,10 +372,10 @@ export class NetworkTableClient {
 
   subscribe(path: string): boolean {
     const entryData = this.getOrMakeEntry(path);
-    if (entryData.subuid) {
+    if (entryData.guid) {
       return true;
     }
-    entryData.subuid = this.subscription_counter++;
+    entryData.guid = this.subscription_counter++;
 
     if (!this.connected) {
       return false;
@@ -376,8 +385,11 @@ export class NetworkTableClient {
       {
         method: MessageType.Subscribe,
         params: {
-          prefixes: [path],
-          subuid: entryData.subuid
+          topics: [path],
+          subuid: entryData.guid,
+          options: {
+            prefix: true
+          }
         }
       } as Subscribe
     );
@@ -391,7 +403,7 @@ export class NetworkTableClient {
       return false;
     }
 
-    if (!entryData.subuid) {
+    if (!entryData.guid) {
       return true;
     }
 
@@ -399,23 +411,23 @@ export class NetworkTableClient {
       {
         method: MessageType.Unsubscribe,
         params: {
-          subuid: entryData.subuid
+          subuid: entryData.guid
         }
       } as Unsubscribe
     );
-    entryData.subuid = undefined;
+    entryData.guid = undefined;
 
     return true;
   }
 
   subscribed(path: string): boolean {
-    return this.paths.get(path)?.subuid !== undefined;
+    return this.paths.get(path)?.guid !== undefined;
   }
 
   publish(path: string, type: ValueId): boolean {
     const entryData = this.getOrMakeEntry(path);
 
-    entryData.id = this.publish_counter;
+    entryData.guid = this.publish_counter;
 
     if (entryData.publishing) {
       return true;
@@ -434,7 +446,7 @@ export class NetworkTableClient {
         method: MessageType.PublishRequest,
         params: {
           name: path,
-          pubuid: entryData.id,
+          pubuid: entryData.guid,
           type: type
         }
       } as PublishRequest
@@ -453,7 +465,7 @@ export class NetworkTableClient {
       return true;
     }
 
-    if (!entryData.id) {
+    if (!entryData.guid) {
       return true;
     }
 
@@ -462,7 +474,7 @@ export class NetworkTableClient {
         method: MessageType.PublishRelease,
         params: {
           name: path,
-          pubuid: entryData.id
+          pubuid: entryData.guid
         }
       } as PublishRelease
     );
