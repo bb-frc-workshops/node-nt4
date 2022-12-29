@@ -13,13 +13,18 @@ let entry_pub = new Entry(ntClient,'Romi/SecondsSinceStart');
 // Publish SecondsSinceStart as an increasing counter at 1 second interval
 let value = 0;
 setInterval(() => {
-    console.log('publish value = ' + value);
-    entry_pub.setInteger(value);
-    value++;
+    if( entry_pub.setInteger(value) ) {
+        console.log('publish value = ' + value);
+        value++;
+    } else {
+        value = 0;  // Reset value since not connected
+        console.log('Failed to publish integer, retrying connection');
+        ntClient.retry(); // Retry connection
+    }
 }, 1000);
 
-// TODO: Only can figure out how to data if subscribe to all data noted here as ''
-let entry_sub = new Entry(ntClient, '');
+// Specify the table you'd like to listen to
+let entry_sub = new Entry(ntClient, '/FMSInfo');
 
 // Create listener for MatchNumber
 let matchNumber_callback = ((newValue: TimestamepdValue, oldValue: TimestamepdValue | undefined, path: string) => {
@@ -29,7 +34,7 @@ let matchNumber_callback = ((newValue: TimestamepdValue, oldValue: TimestamepdVa
 // Keep tryihng to subscribe (need to do this after the connection succeeds)
 // TODO: save subscriptions so that they are added after connection
 setInterval( () => {
-    if (!entry_sub.subscribed()) {
+    if (ntClient.connected && !entry_sub.subscribed()) {
         let subscribed = entry_sub.subscribe();
         ntClient.addListener('/FMSInfo/MatchNumber', 'MatchNumber', matchNumber_callback);
     }

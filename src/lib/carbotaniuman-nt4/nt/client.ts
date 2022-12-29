@@ -63,6 +63,7 @@ export class NetworkTableClient {
   private publish_counter = 1000;
 
   private timestampOffset = 0;
+  private url: string;
 
   get connected(): boolean {
     return this.timestampOffset != 0;
@@ -76,11 +77,17 @@ export class NetworkTableClient {
     this.paths = new Map<string, EntryData>();
     this.topics = new Map<number, EntryData>();
     this.toSend = new Map<string, EntryData>();
+    this.url = url;
+    this.ws = this.createWebSocket();
 
-    this.ws = new WebSocket(url, ['networktables.first.wpi.edu']);
-    this.ws.binaryType = 'arraybuffer';
+  }
 
-    this.ws.onclose = () => {
+  private createWebSocket() : WebSocket {
+    const ws = new WebSocket(this.url, ['networktables.first.wpi.edu']);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onclose = () => {
+      console.log("onclose");
       this.timestampOffset = 0;
 
       this.paths.forEach((value) => {
@@ -101,8 +108,8 @@ export class NetworkTableClient {
       });
     };
     
-    this.ws.onopen = () => {
-      this.ws.send(encode(timestampMessage()));
+    ws.onopen = () => {
+      ws.send(encode(timestampMessage()));
 
       this.paths.forEach((value) => {
         // invariant that `value.published` and `value.data` are nonnull
@@ -115,7 +122,7 @@ export class NetworkTableClient {
     };
 
     // TODO ZQ: Change this pls
-    this.ws.on("message", (data: Buffer, isBinary: boolean) => {
+    ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {
         // Need TRY-CATCH for now to avoid this on first set of messages
         //   throw this.createExtraByteError(this.pos);
@@ -171,6 +178,8 @@ export class NetworkTableClient {
         msg.forEach(this.processTextMessage, this);
       }
     });
+
+    return ws;
 
     // Browser implementation
     // this.ws.onmessage = (ev: MessageEvent) => {
@@ -312,6 +321,7 @@ export class NetworkTableClient {
         value,
         timestamp: isDefault ? 0 : 1
       };
+      return false;
     } else {
       entryData.data = {
         value,
@@ -493,6 +503,12 @@ export class NetworkTableClient {
 
   private timestamp() {
     return nowMicros() + this.timestampOffset;
+  }
+
+  retry() {
+    if( !this.connected ) {
+      this.ws = this.createWebSocket();
+    }
   }
 }
 
