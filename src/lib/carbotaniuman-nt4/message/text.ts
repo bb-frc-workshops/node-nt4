@@ -3,10 +3,10 @@ import { ValueId } from './binary';
 export const enum MessageType {
   PublishRequest = 'publish',
   PublishRelease = 'pubrel',
-  SetFlags = 'setflags',
+  SetProperties = 'setproperties',
+  AnnouncedProperties = 'properties',
   Announce = 'announce',
   Unannounce = 'unannounce',
-  GetValues = 'getvalues',
   Subscribe = 'subscribe',
   Unsubscribe = 'unsubscribe',
 }
@@ -14,12 +14,17 @@ export const enum MessageType {
 export type TextMessage =
   | PublishRequest
   | PublishRelease
-  | SetFlags
+  | SetProperties
+  | AnnouncedProperties
   | Announce
   | Unannounce
-  | GetValues
   | Subscribe
   | Unsubscribe;
+
+export type Properties = {
+  persistent: boolean,
+  retained: boolean
+} | null;
 
 export interface PublishRequest {
   method: MessageType.PublishRequest;
@@ -36,22 +41,21 @@ export interface PublishRelease {
   };
 }
 
-export interface SetFlags {
-  method: MessageType.SetFlags;
+// update the properties. a value of null means delete
+export interface SetProperties {
+  method: MessageType.SetProperties,
   params: {
     name: string;
-    add: string[];
-    remove: string[];
+    update: Map<string, any>
   };
 }
 
-export interface SetFlags {
-  method: MessageType.SetFlags;
+export interface AnnouncedProperties {
+  method: MessageType.AnnouncedProperties,
   params: {
-    name: string;
-    add: string[];
-    remove: string[];
-  };
+    name: string,
+    ack: boolean
+  }
 }
 
 export interface Announce {
@@ -60,7 +64,11 @@ export interface Announce {
     name: string;
     id: number;
     type: ValueId;
-    flags: string[];
+    pubuid: number;
+    properties?: {
+      persistent: boolean,
+      retained: boolean
+    } 
   };
 }
 
@@ -69,13 +77,6 @@ export interface Unannounce {
   params: {
     name: string;
     id: number;
-  };
-}
-
-export interface GetValues {
-  method: MessageType.GetValues;
-  params: {
-    ids: number[];
   };
 }
 

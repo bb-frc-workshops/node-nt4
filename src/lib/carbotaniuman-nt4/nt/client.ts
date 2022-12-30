@@ -10,6 +10,7 @@ import {
 } from '../message/binary';
 import {
   MessageType,
+  Properties,
   PublishRelease,
   PublishRequest, Subscribe,
   TextMessage, Unsubscribe
@@ -42,7 +43,7 @@ interface EntryData {
 
   id?: number;
   data?: TimestamepdValue
-  flags?: string[];
+  properties?: Properties;
 
   guid?: number;
   publishing?: true;
@@ -235,8 +236,9 @@ export class NetworkTableClient {
   private processTextMessage(msg: TextMessage) {
     switch (msg.method) {
       case MessageType.Announce: {
+        console.log("processText msg " + JSON.stringify(msg));
         const entryData = this.getOrMakeEntry(msg.params.name);
-        entryData.flags = msg.params.flags;
+        entryData.properties = msg.params.properties;
 
         // we assume the id cannot change
         if (entryData.id === undefined) {
@@ -362,24 +364,24 @@ export class NetworkTableClient {
     return entryData.data.value;
   }
 
-  setFlags(path: string, flags: string[]): boolean {
+  setProperites(path: string, update: Map<string, any>): boolean {
     //TODO: Stuff here
 
     return false;
   }
 
-  getFlags(path: string): string[] {
+  getProperties(path: string): Properties {
     const entryData = this.getOrMakeEntry(path);
 
     if (!this.subscribed(path)) {
       this.subscribe(path);
     }
 
-    if (entryData.flags) {
-      return entryData.flags;
+    if (entryData.properties) {
+      return entryData.properties as Properties;
     }
 
-    return [];
+    return null as Properties;
   }
 
   subscribe(path: string): boolean {

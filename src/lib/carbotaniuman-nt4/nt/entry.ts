@@ -1,6 +1,7 @@
 import { ValueOf } from 'ts-essentials';
 
 import { Value, ValueId } from '../message/binary';
+import { Properties } from '../message/text';
 
 import {
   NetworkTableClient,
@@ -12,10 +13,12 @@ import {
 export class Entry {
   private connection: NetworkTableClient;
   path: string;
+  properties: Properties;
 
   constructor(connection: NetworkTableClient, path: string) {
     this.connection = connection;
     this.path = path;
+    this.properties = null;
   }
 
   setValue<T extends SettableValueId>(
@@ -128,12 +131,14 @@ export class Entry {
     return this.getValue(ValueId.StringArray, defaultValue);
   }
 
-  setFlags(flags: string[]): boolean {
-    return this.connection.setFlags(this.path, flags);
+  setProperties(flags: string[]): boolean {
+    // TODO: Set Properties
+    return false;
   }
 
-  getFlags(): string[] {
-    return this.connection.getFlags(this.path);
+  getProperties(): Properties {
+    // TODO: Get Properties
+    return null;
   }
 
   subscribe(): boolean {
