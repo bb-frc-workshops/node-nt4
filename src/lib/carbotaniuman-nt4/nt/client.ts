@@ -87,7 +87,7 @@ export class NetworkTableClient {
     ws.binaryType = 'arraybuffer';
 
     ws.onclose = () => {
-      console.log("onclose");
+      console.log("Closing Connection");
       this.timestampOffset = 0;
 
       this.paths.forEach((value) => {
@@ -109,8 +109,8 @@ export class NetworkTableClient {
     };
     
     ws.onopen = () => {
+      console.log("Opening Connection");
       ws.send(encode(timestampMessage()));
-
       this.paths.forEach((value) => {
         // invariant that `value.published` and `value.data` are nonnull
         // is established by `onclose`
@@ -137,7 +137,10 @@ export class NetworkTableClient {
 
         if (id == -1) {
           const oldOffset = this.timestampOffset;
-          this.timestampOffset = (timestamp - (dataValue as number)) / 2;
+          // TODO: Should this be thre average of the server/client timestamps or should it be
+          // the client timestamp + 1/2 the difference of the RTT?
+          // Must round to avoid 0.5 since server will disconnect on non-integers.
+          this.timestampOffset = Math.round((timestamp - (dataValue as number)) / 2);
 
           if (oldOffset == 0) {
             this.paths.forEach((v) => {
@@ -230,7 +233,6 @@ export class NetworkTableClient {
   }
 
   private processTextMessage(msg: TextMessage) {
-    //console.log(" TextMessage " + JSON.stringify(msg));
     switch (msg.method) {
       case MessageType.Announce: {
         const entryData = this.getOrMakeEntry(msg.params.name);
