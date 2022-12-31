@@ -10,6 +10,7 @@ import {
 } from '../message/binary';
 import {
   MessageType,
+  Properties,
   PublishRelease,
   PublishRequest, Subscribe,
   TextMessage, Unsubscribe
@@ -42,9 +43,9 @@ interface EntryData {
 
   id?: number;
   data?: TimestamepdValue
-  flags?: string[];
+  properties?: Properties;
 
-  subuid?: number;
+  guid?: number;
   publishing?: true;
   published?: 'weak' | 'strong';
 }
@@ -59,9 +60,11 @@ export class NetworkTableClient {
   private toSend: Map<string, EntryData>;
 
   private ws: WebSocket;
-  private counter = 0;
+  private subscription_counter = 0;
+  private publish_counter = 1000;
 
   private timestampOffset = 0;
+  private url: string;
 
   get connected(): boolean {
     return this.timestampOffset != 0;
@@ -75,11 +78,17 @@ export class NetworkTableClient {
     this.paths = new Map<string, EntryData>();
     this.topics = new Map<number, EntryData>();
     this.toSend = new Map<string, EntryData>();
+    this.url = url;
+    this.ws = this.createWebSocket();
 
-    this.ws = new WebSocket(url, ['networktables.first.wpi.edu']);
-    this.ws.binaryType = 'arraybuffer';
+  }
 
-    this.ws.onclose = () => {
+  private createWebSocket() : WebSocket {
+    const ws = new WebSocket(this.url, ['networktables.first.wpi.edu']);
+    ws.binaryType = 'arraybuffer';
+
+    ws.onclose = () => {
+      console.log("Closing Connection");
       this.timestampOffset = 0;
 
       this.paths.forEach((value) => {
@@ -95,14 +104,14 @@ export class NetworkTableClient {
         }
 
         value.publishing = undefined;
-        value.subuid = undefined;
+        value.guid = undefined;
         value.id = undefined;
       });
     };
     
-    this.ws.onopen = () => {
-      this.ws.send(encode(timestampMessage()));
-
+    ws.onopen = () => {
+      console.log("Opening Connection");
+      ws.send(encode(timestampMessage()));
       this.paths.forEach((value) => {
         // invariant that `value.published` and `value.data` are nonnull
         // is established by `onclose`
@@ -114,12 +123,25 @@ export class NetworkTableClient {
     };
 
     // TODO ZQ: Change this pls
-    this.ws.on("message", (data: Buffer, isBinary: boolean) => {
+    ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) {
-        const [id, timestamp, dataType, dataValue] = decode(data) as BinaryMessage;
+        // Need TRY-CATCH for now to avoid this on first set of messages
+        //   throw this.createExtraByteError(this.pos);
+        //   RangeError: Extra 13 of 40 byte(s) found at buffer[27]
+        let id: number, dataType: ValueBinaryId, timestamp: number, dataValue;
+        try {
+          [id, timestamp, dataType, dataValue] = decode(data) as BinaryMessage;
+        } catch(e) {
+          console.log('Message Exception');
+          return;
+        }
+
         if (id == -1) {
           const oldOffset = this.timestampOffset;
-          this.timestampOffset = (timestamp - (dataValue as number)) / 2;
+          // TODO: Should this be thre average of the server/client timestamps or should it be
+          // the client timestamp + 1/2 the difference of the RTT?
+          // Must round to avoid 0.5 since server will disconnect on non-integers.
+          this.timestampOffset = Math.round((timestamp - (dataValue as number)) / 2);
 
           if (oldOffset == 0) {
             this.paths.forEach((v) => {
@@ -160,6 +182,8 @@ export class NetworkTableClient {
         msg.forEach(this.processTextMessage, this);
       }
     });
+
+    return ws;
 
     // Browser implementation
     // this.ws.onmessage = (ev: MessageEvent) => {
@@ -210,32 +234,33 @@ export class NetworkTableClient {
   }
 
   private processTextMessage(msg: TextMessage) {
-    switch (msg.type) {
+    switch (msg.method) {
       case MessageType.Announce: {
-        const entryData = this.getOrMakeEntry(msg.data.name);
-        entryData.flags = msg.data.flags;
+        console.log("processText msg " + JSON.stringify(msg));
+        const entryData = this.getOrMakeEntry(msg.params.name);
+        entryData.properties = msg.params.properties;
 
         // we assume the id cannot change
         if (entryData.id === undefined) {
-          entryData.id = msg.data.id;
+          entryData.id = msg.params.id;
 
-          this.paths.set(msg.data.name, entryData);
-          this.topics.set(msg.data.id, entryData);
+          this.paths.set(msg.params.name, entryData);
+          this.topics.set(msg.params.id, entryData);
 
-          const toSend = this.toSend.get(msg.data.name);
+          const toSend = this.toSend.get(msg.params.name);
           if(toSend) {
             this.sendValue(toSend as FilledEntryData);
-            this.toSend.delete(msg.data.name);
+            this.toSend.delete(msg.params.name);
           }
         }
         break;
       }
       case MessageType.Unannounce: {
-        const entryData = this.paths.get(msg.data.name);
+        const entryData = this.paths.get(msg.params.name);
 
         if (entryData !== undefined) {
-          this.paths.delete(msg.data.name);
-          this.topics.delete(msg.data.id);
+          this.paths.delete(msg.params.name);
+          this.topics.delete(msg.params.id);
 
           entryData.id = undefined;
         }
@@ -283,7 +308,6 @@ export class NetworkTableClient {
 
   setValue(path: string, value: SettableValue, isDefault = false): boolean {
     const entryData = this.getOrMakeEntry(path);
-
     if (entryData.data) {
       if (entryData.data.value.type !== value.type) {
         return false;
@@ -301,12 +325,12 @@ export class NetworkTableClient {
         value,
         timestamp: isDefault ? 0 : 1
       };
+      return false;
     } else {
       entryData.data = {
         value,
         timestamp: this.timestamp()
       };
-
       this.sendValue(entryData as FilledEntryData);
     }
     return true;
@@ -316,9 +340,8 @@ export class NetworkTableClient {
     if (!this.publishing(entry.path)) {
       this.publish(entry.path, entry.data.value.type);
     }
-
-    if(entry.id) {
-      this.ws.send(encode([entry.id, this.timestamp(), binaryId(entry.data.value.type), entry.data.value.value]))
+    if(entry.guid) {
+      this.ws.send(encode([entry.guid, this.timestamp(), binaryId(entry.data.value.type), entry.data.value.value]))
     } else {
       this.toSend.set(entry.path, entry);
     }
@@ -326,7 +349,6 @@ export class NetworkTableClient {
 
   getValue(path: string, defaultValue: SettableValue): SettableValue {
     const entryData = this.getOrMakeEntry(path);
-
     if (!this.subscribed(path)) {
       this.subscribe(path);
     }
@@ -342,32 +364,32 @@ export class NetworkTableClient {
     return entryData.data.value;
   }
 
-  setFlags(path: string, flags: string[]): boolean {
+  setProperites(path: string, update: Map<string, any>): boolean {
     //TODO: Stuff here
 
     return false;
   }
 
-  getFlags(path: string): string[] {
+  getProperties(path: string): Properties {
     const entryData = this.getOrMakeEntry(path);
 
     if (!this.subscribed(path)) {
       this.subscribe(path);
     }
 
-    if (entryData.flags) {
-      return entryData.flags;
+    if (entryData.properties) {
+      return entryData.properties as Properties;
     }
 
-    return [];
+    return null as Properties;
   }
 
   subscribe(path: string): boolean {
     const entryData = this.getOrMakeEntry(path);
-    if (entryData.subuid) {
+    if (entryData.guid) {
       return true;
     }
-    entryData.subuid = this.counter++;
+    entryData.guid = this.subscription_counter++;
 
     if (!this.connected) {
       return false;
@@ -375,10 +397,13 @@ export class NetworkTableClient {
 
     this.sendMessage(
       {
-        type: MessageType.Subscribe,
-        data: {
-          prefixes: [path],
-          subuid: entryData.subuid
+        method: MessageType.Subscribe,
+        params: {
+          topics: [path],
+          subuid: entryData.guid,
+          options: {
+            prefix: true
+          }
         }
       } as Subscribe
     );
@@ -392,29 +417,32 @@ export class NetworkTableClient {
       return false;
     }
 
-    if (!entryData.subuid) {
+    if (!entryData.guid) {
       return true;
     }
 
     this.sendMessage(
       {
-        type: MessageType.Unsubscribe,
-        data: {
-          subuid: entryData.subuid
+        method: MessageType.Unsubscribe,
+        params: {
+          subuid: entryData.guid
         }
       } as Unsubscribe
     );
-    entryData.subuid = undefined;
+    entryData.guid = undefined;
 
     return true;
   }
 
   subscribed(path: string): boolean {
-    return this.paths.get(path)?.subuid !== undefined;
+    return this.paths.get(path)?.guid !== undefined;
   }
 
   publish(path: string, type: ValueId): boolean {
     const entryData = this.getOrMakeEntry(path);
+
+    entryData.guid = this.publish_counter;
+
     if (entryData.publishing) {
       return true;
     }
@@ -429,9 +457,10 @@ export class NetworkTableClient {
 
     this.sendMessage(
       {
-        type: MessageType.PublishRequest,
-        data: {
+        method: MessageType.PublishRequest,
+        params: {
           name: path,
+          pubuid: entryData.guid,
           type: type
         }
       } as PublishRequest
@@ -450,11 +479,16 @@ export class NetworkTableClient {
       return true;
     }
 
+    if (!entryData.guid) {
+      return true;
+    }
+
     this.sendMessage(
       {
-        type: MessageType.PublishRelease,
-        data: {
-          name: path
+        method: MessageType.PublishRelease,
+        params: {
+          name: path,
+          pubuid: entryData.guid
         }
       } as PublishRelease
     );
@@ -473,6 +507,12 @@ export class NetworkTableClient {
 
   private timestamp() {
     return nowMicros() + this.timestampOffset;
+  }
+
+  retry() {
+    if( !this.connected ) {
+      this.ws = this.createWebSocket();
+    }
   }
 }
 

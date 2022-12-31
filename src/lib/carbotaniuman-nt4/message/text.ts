@@ -3,10 +3,10 @@ import { ValueId } from './binary';
 export const enum MessageType {
   PublishRequest = 'publish',
   PublishRelease = 'pubrel',
-  SetFlags = 'setflags',
+  SetProperties = 'setproperties',
+  AnnouncedProperties = 'properties',
   Announce = 'announce',
   Unannounce = 'unannounce',
-  GetValues = 'getvalues',
   Subscribe = 'subscribe',
   Unsubscribe = 'unsubscribe',
 }
@@ -14,87 +14,89 @@ export const enum MessageType {
 export type TextMessage =
   | PublishRequest
   | PublishRelease
-  | SetFlags
+  | SetProperties
+  | AnnouncedProperties
   | Announce
   | Unannounce
-  | GetValues
   | Subscribe
   | Unsubscribe;
 
+export type Properties = {
+  persistent: boolean,
+  retained: boolean
+} | null;
+
 export interface PublishRequest {
-  type: MessageType.PublishRequest;
-  data: {
+  method: MessageType.PublishRequest;
+  params: {
     name: string;
     type: ValueId;
   };
 }
 
 export interface PublishRelease {
-  type: MessageType.PublishRelease;
-  data: {
+  method: MessageType.PublishRelease;
+  params: {
     name: string;
   };
 }
 
-export interface SetFlags {
-  type: MessageType.SetFlags;
-  data: {
+// update the properties. a value of null means delete
+export interface SetProperties {
+  method: MessageType.SetProperties,
+  params: {
     name: string;
-    add: string[];
-    remove: string[];
+    update: Map<string, any>
   };
 }
 
-export interface SetFlags {
-  type: MessageType.SetFlags;
-  data: {
-    name: string;
-    add: string[];
-    remove: string[];
-  };
+export interface AnnouncedProperties {
+  method: MessageType.AnnouncedProperties,
+  params: {
+    name: string,
+    ack: boolean
+  }
 }
 
 export interface Announce {
-  type: MessageType.Announce;
-  data: {
+  method: MessageType.Announce;
+  params: {
     name: string;
     id: number;
     type: ValueId;
-    flags: string[];
+    pubuid: number;
+    properties?: {
+      persistent: boolean,
+      retained: boolean
+    } 
   };
 }
 
 export interface Unannounce {
-  type: MessageType.Unannounce;
-  data: {
+  method: MessageType.Unannounce;
+  params: {
     name: string;
     id: number;
   };
 }
 
-export interface GetValues {
-  type: MessageType.GetValues;
-  data: {
-    ids: number[];
-  };
-}
-
 export interface Subscribe {
-  type: MessageType.Subscribe;
-  data: {
-    prefixes: string[];
+  method: MessageType.Subscribe;
+  params: {
+    topics: string[];
     subuid: number;
-    options: {
-      immediate: boolean;
-      periodic: number;
-      logging: boolean;
+    options?: {
+      periodic?: number; // Default is every 100 ms
+      all?: boolean;
+      topicsonly?: boolean;
+      prefix?: boolean; // Set true to accept partial matches
     };
   };
 }
 
 export interface Unsubscribe {
-  type: MessageType.Unsubscribe;
-  data: {
+  method: MessageType.Unsubscribe;
+  params: {
     subuid: number;
   };
 }
